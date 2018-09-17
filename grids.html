@@ -1,0 +1,312 @@
+<html>
+	<head>
+		<title>
+			Grid
+		</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<style>
+			body {
+				font-family: "Arial";
+			}
+			canvas {
+				border: solid;
+				width: 100%;
+				height: 80%;
+				background-color: #CFD8DC;
+				margin-bottom: 10px;
+			}
+
+			span.title {
+				width:85px;
+				margin-right: 5px;
+				display: inline-block;
+				text-align: right;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="main"></canvas>
+		<script>
+		var x = 0;
+
+		var canvas = document.getElementById("main");
+		var context = canvas.getContext("2d");
+
+		window.onresize = function(event) {
+		    canvas.width = window.innerWidth;
+		    canvas.height = window.innerHeight * 0.8;
+		    console.log(canvas.width + " " + canvas.height);
+		    App.stop();
+		};
+		canvas.width = window.innerWidth;
+		canvas.height = window.innerHeight * 0.8;
+		console.log(canvas.width + " " + canvas.height);
+		
+		var circle = {
+			x: 50, y: 50, r: 50, over: false,
+			vx: 0, vy: 0, vr: 0,
+			dragging: false,
+		}
+		var mouse = {
+			x: -1, y: -1,
+			down: false,
+			pX: -1, pY: -1, // Previous position
+			sX: -1, sY: -1 // Start drag
+		};
+		
+		var grids = [];
+		
+		function generateGridRow(size, layer) {
+			size = size * Math.pow(2,layer-1)
+			var gridRow = [];
+			var space = canvas.width / size;
+			console.log(space)
+			var iterX = Math.ceil(canvas.width / space);
+			var iterY = Math.ceil(canvas.height / space);
+			for ( var x = 0; x < iterX; x++ ) {
+				for ( var y = 0; y < iterY; y++ ) {
+					var X = x * space;
+					var Y = y * space;
+					gridRow.push(generateGridObject(X,Y, space, layer));
+				}
+			}
+			return gridRow;
+		}
+
+		grids.push(generateGridRow(4, 1));
+		grids.push(generateGridRow(4, 2));
+		grids.push(generateGridRow(4, 3));
+		grids.push(generateGridRow(4, 4));
+		grids.push(generateGridRow(4, 5));
+		
+		function generateGridObject(x, y, size, layer) {
+			return {
+				over: false,
+				size: size,
+				sx: x, ex: x + size,
+				sy: y, ey: y + size,
+				layer: layer
+			}
+		}
+		
+		function renderGridObject(context, grid) {
+			if (!grid.over) return;
+			var layer = Math.max(5 - grid.layer + 1, 1)
+			var opacity = 1 - grid.layer * 0.1;
+			
+
+			context.globalAlpha = opacity;
+      context.strokeStyle = 'black';
+      context.lineWidth = layer * 0.7;
+			
+
+			if (  grid.layer == 2 ) {
+				context.beginPath();
+				context.moveTo(grid.sx, 0);
+				context.lineTo(grid.sx, canvas.height);
+				context.moveTo(grid.ex, 0);
+				context.lineTo(grid.ex, canvas.height);
+				context.moveTo(0, grid.sy);
+				context.lineTo(canvas.width, grid.sy);
+				context.moveTo(0, grid.ey);
+				context.lineTo(canvas.width, grid.ey);
+				context.stroke();
+				context.closePath();
+			} else {
+				context.fillStyle = "#607D8B";
+				context.globalAlpha = opacity * 0.6;
+				context.beginPath();
+				context.rect(grid.sx, grid.sy, grid.ex-grid.sx, grid.ey-grid.sy);
+				context.fill();
+				context.stroke();
+				context.closePath();
+			}
+
+		}
+		
+		function collision(circle, grid) {
+			var circdistx = Math.abs(circle.x - (grid.sx + grid.ex)/2);
+			var circdisty = Math.abs(circle.y - (grid.sy + grid.ey)/2);
+			// return circdistx < (circle.r + grid.size/2) && circdisty < (circle.r + grid.size/2)
+			
+	    if (circdistx > (grid.size/2 + circle.r)) { return false; }
+	    if (circdisty > (grid.size/2 + circle.r)) { return false; }
+			
+	    if (circdistx <= (grid.size/2)) { return true; } 
+	    if (circdisty <= (grid.size/2)) { return true; }
+			
+	    cornerDistance_sq = Math.pow((circdistx - grid.size/2),2) +
+	                         Math.pow((circdisty - grid.size/2),2);
+			
+	    return (cornerDistance_sq <= (circle.r*circle.r));
+		}
+		
+		function mouseInCircle() {
+			var d2 = Math.pow(circle.x - mouse.x, 2) + Math.pow(circle.y - mouse.y, 2)
+			return d2 < circle.r * circle.r;
+		}
+
+		var date = new Date();
+		var App = {
+			fps: 30,
+			_actualFPS: 0,
+			_prevTime : 0,
+			_currTime : 0,
+			_delta : 0,
+			_percentage: 0,
+			_intervalID: null,
+			start : function (fps) {
+				App.stop();
+				if ( typeof fps == "undefined" ) {
+					this.fps = fps;
+				}
+				App._prevTime = App._currTime = Date.now();
+
+				canvas.addEventListener('mousemove', function(evt) {
+					var rect = canvas.getBoundingClientRect();
+					mouse.x = evt.clientX - rect.left;
+				  mouse.y = evt.clientY - rect.top;
+				}, false);
+				canvas.addEventListener('mousedown', function(evt) {
+					var rect = canvas.getBoundingClientRect();
+					mouse.sX = evt.clientX - rect.left;
+				  mouse.sY = evt.clientY - rect.top;
+					mouse.down = true;
+					if (mouseInCircle()) {
+						circle.dragging = true;
+					}
+					console.log("Down", mouse);
+				}, false);
+				canvas.addEventListener('mouseup', function(evt) {
+					if (circle.dragging) {
+						// Add momentum
+						var dX = mouse.x - mouse.pX;
+						var dY = mouse.y - mouse.pY;
+						circle.vx = dX * 20;
+						circle.vy = dY * 20;
+					}
+					mouse.down = false;
+					circle.dragging = false;
+					console.log("Up", mouse);
+				}, false);
+				
+				canvas.addEventListener('mousewheel', function(event) {
+					if(event.deltaY > 0) {
+						circle.vr += 15;
+					} else {
+						circle.vr -= 15;
+					}
+				}, false);
+				
+				this._intervalID = setInterval(this.run, 1000 / this.fps);
+			},
+			stop: function () {
+				if ( this._intervalID != null ) {
+					clearInterval(this._intervalID);
+					this._intervalID = null;
+				}
+			
+			},
+			
+			run: function() {
+				App.update();
+				App.draw();
+			},
+			
+			update: function() {
+				var width = canvas.width;
+				var height = canvas.height;
+				
+				App._currTime = Date.now();
+				App._delta = (App._currTime - App._prevTime)/1000;
+				App._actualFPS = 1 / App._delta;
+				
+				circle.over = mouseInCircle();
+				if (circle.dragging) {
+					circle.x = mouse.x;
+					circle.y = mouse.y;
+				} else {
+					var nextX = circle.x + circle.vx * App._delta;
+					var nextY = circle.y + circle.vy * App._delta;
+					
+					if ( nextX - circle.r <= 0 || nextX + circle.r >= width ) {
+						circle.vx *= -1;
+					}
+					if ( nextY - circle.r <= 0 || nextY + circle.r >= height ) {
+						circle.vy *= -1;
+					}
+					
+					circle.x += circle.vx * App._delta;
+					circle.y += circle.vy * App._delta;
+					circle.r += circle.vr * App._delta;
+					circle.vx -= circle.vx * 0.2 * App._delta;
+					circle.vy -= circle.vy * 0.2 * App._delta;
+					circle.vr -= circle.vr * 3 * App._delta;
+					
+					var shorterSide = Math.min(canvas.width, canvas.height);
+					if ( circle.r < 5 ) circle.r = 5;
+					if ( circle.r > shorterSide * 0.3) circle.r = shorterSide * 0.3;
+					if ( circle.x - circle.r < 0 ) circle.x = circle.r;
+					if ( circle.y - circle.r < 0 ) circle.y = circle.r;
+					if ( circle.x + circle.r > canvas.width ) circle.x = canvas.width - circle.r;
+					if ( circle.y + circle.r > canvas.height ) circle.y = canvas.height - circle.r;
+				}
+				// Updates the mouse
+				mouse.pX = mouse.x;
+				mouse.pY = mouse.y;
+				
+				// collision
+				grids.forEach( function(gridRow) {
+					gridRow.forEach ( function(grid) {
+						grid.over = collision(circle, grid);
+					});
+				})
+				App._prevTime = App._currTime;
+			},
+	
+			draw: function() {
+				var width = canvas.width;
+				var height = canvas.height;
+				
+				context.clearRect(0,0,width,height);
+	
+
+				grids.forEach( function(gridRow) {
+					gridRow.forEach ( function(grid) {
+						renderGridObject(context, grid);
+					});
+				})
+				
+				context.globalAlpha = circle.over ? 0.9: 1;
+				context.fillStyle = "#00BCD4";
+				context.beginPath();
+				context.arc(circle.x, circle.y, circle.r, 0, Math.PI*2, true);
+				context.fill();
+				context.closePath();
+
+				context.fillStyle="#000000";
+				context.font="10px Arial";
+				context.fillText ( "fps: " + Math.round( App._actualFPS ) ,10 , 10);
+      }
+		};
+
+		var people = [];
+
+		function startSimulation() {
+			App.start();
+		}
+
+		function stopSimulation() {
+			App.stop();
+		}
+		startSimulation();
+		
+
+		
+
+
+
+
+		</script>
+	</body>
+</html>
